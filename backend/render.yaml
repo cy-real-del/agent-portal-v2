@@ -1,0 +1,22 @@
+services:
+  - type: web
+    name: cy-real-portal-api
+    runtime: node
+    repo: https://github.com/cy-real-del/agent-portal-v2
+    rootDir: backend
+    buildCommand: npm install && npm run build
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: 8000
+      - key: AUTO_IMPORT_ON_START
+        value: true
+      - key: XML_IMPORT_INTERVAL
+        value: 0 */6 * * *
+    disk:
+      name: data
+      mountPath: /opt/render/project/src/data
+      sizeGB: 1
