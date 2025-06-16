@@ -3,11 +3,16 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Agent Portal v2 - API Version</title>
+    <title>Agent Portal v2 - Enhanced</title>
     <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
+    
+    <!-- Leaflet CSS для карты -->
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    
     <style>
         .line-clamp-2 {
             display: -webkit-box;
@@ -22,6 +27,20 @@
             0%, 100% { opacity: 1; }
             50% { opacity: .5; }
         }
+        .map-container {
+            height: 400px;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .selection-badge {
+            position: absolute;
+            top: 8px;
+            right: 8px;
+            z-index: 10;
+        }
+        .filter-section {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
     </style>
 </head>
 <body>
@@ -29,14 +48,14 @@
         <div class="min-h-screen bg-gray-50 flex items-center justify-center">
             <div class="text-center">
                 <h1 class="text-3xl font-bold text-gray-900 mb-4">Agent Portal v2</h1>
-                <p class="text-gray-600 mb-4">Загрузка API интеграции...</p>
+                <p class="text-gray-600 mb-4">Загрузка расширенной версии...</p>
                 <div class="animate-pulse w-8 h-8 bg-blue-500 rounded-full mx-auto"></div>
             </div>
         </div>
     </div>
 
     <script type="text/babel">
-        const { useState, useEffect } = React;
+        const { useState, useEffect, useRef } = React;
 
         // API Configuration
         const API_CONFIG = {
@@ -45,16 +64,478 @@
                 : 'https://cy-real-portal-api.onrender.com/api'
         };
 
+        // Map Component
+        const MapComponent = ({ properties, selectedProperty, onPropertySelect }) => {
+            const mapRef = useRef(null);
+            const mapInstanceRef = useRef(null);
+            const markersRef = useRef([]);
+
+            useEffect(() => {
+                if (!mapRef.current) return;
+
+                // Initialize map
+                mapInstanceRef.current = L.map(mapRef.current).setView([34.9, 33.2], 8);
+
+                // Add tile layer
+                L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+                    attribution: '© OpenStreetMap contributors'
+                }).addTo(mapInstanceRef.current);
+
+                return () => {
+                    if (mapInstanceRef.current) {
+                        mapInstanceRef.current.remove();
+                        mapInstanceRef.current = null;
+                    }
+                };
+            }, []);
+
+            useEffect(() => {
+                if (!mapInstanceRef.current || !properties.length) return;
+
+                // Clear existing markers
+                markersRef.current.forEach(marker => {
+                    mapInstanceRef.current.removeLayer(marker);
+                });
+                markersRef.current = [];
+
+                // Add new markers
+                properties.forEach(property => {
+                    if (property.coordinates?.lat && property.coordinates?.lng) {
+                        const isSelected = selectedProperty?.id === property.id;
+                        
+                        const marker = L.marker([property.coordinates.lat, property.coordinates.lng])
+                            .addTo(mapInstanceRef.current)
+                            .bindPopup(`
+                                <div class="p-2">
+                                    <h3 class="font-semibold text-sm">${property.title}</h3>
+                                    <p class="text-blue-600 font-bold">€${property.price?.toLocaleString()}</p>
+                                    <p class="text-gray-600 text-xs">${property.city || property.region}</p>
+                                </div>
+                            `)
+                            .on('click', () => {
+                                onPropertySelect(property);
+                            });
+
+                        if (isSelected) {
+                            marker.openPopup();
+                        }
+
+                        markersRef.current.push(marker);
+                    }
+                });
+
+                // Fit bounds if we have markers
+                if (markersRef.current.length > 0) {
+                    const group = new L.featureGroup(markersRef.current);
+                    mapInstanceRef.current.fitBounds(group.getBounds().pad(0.1));
+                }
+            }, [properties, selectedProperty]);
+
+            return React.createElement('div', {
+                ref: mapRef,
+                className: 'map-container w-full'
+            });
+        };
+
+        // Filter Component
+        const FilterPanel = ({ filters, onFiltersChange, onReset, stats }) => {
+            const handleFilterChange = (key, value) => {
+                onFiltersChange({
+                    ...filters,
+                    [key]: value
+                });
+            };
+
+            return React.createElement('div', {
+                className: 'filter-section text-white p-6 rounded-lg mb-6'
+            }, [
+                React.createElement('h3', {
+                    key: 'title',
+                    className: 'text-xl font-semibold mb-4 flex items-center'
+                }, [
+                    React.createElement('svg', {
+                        key: 'icon',
+                        className: 'w-5 h-5 mr-2',
+                        fill: 'currentColor',
+                        viewBox: '0 0 20 20'
+                    }, React.createElement('path', {
+                        fillRule: 'evenodd',
+                        d: 'M3 3a1 1 0 011-1h12a1 1 0 011 1v3a1 1 0 01-.293.707L12 11.414V15a1 1 0 01-.293.707l-2 2A1 1 0 018 17v-5.586L3.293 6.707A1 1 0 013 6V3z',
+                        clipRule: 'evenodd'
+                    })),
+                    'Фильтры поиска'
+                ]),
+
+                React.createElement('div', {
+                    key: 'filters',
+                    className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4'
+                }, [
+                    // Search input
+                    React.createElement('div', {
+                        key: 'search'
+                    }, [
+                        React.createElement('label', {
+                            key: 'label',
+                            className: 'block text-sm font-medium mb-2'
+                        }, 'Поиск по названию'),
+                        React.createElement('input', {
+                            key: 'input',
+                            type: 'text',
+                            placeholder: 'Введите название...',
+                            value: filters.search || '',
+                            onChange: (e) => handleFilterChange('search', e.target.value),
+                            className: 'w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:ring-2 focus:ring-blue-400'
+                        })
+                    ]),
+
+                    // Property type
+                    React.createElement('div', {
+                        key: 'type'
+                    }, [
+                        React.createElement('label', {
+                            key: 'label',
+                            className: 'block text-sm font-medium mb-2'
+                        }, 'Тип недвижимости'),
+                        React.createElement('select', {
+                            key: 'select',
+                            value: filters.type || '',
+                            onChange: (e) => handleFilterChange('type', e.target.value),
+                            className: 'w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:ring-2 focus:ring-blue-400'
+                        }, [
+                            React.createElement('option', { key: 'all', value: '' }, 'Все типы'),
+                            React.createElement('option', { key: 'apartment', value: 'apartment' }, 'Квартира'),
+                            React.createElement('option', { key: 'villa', value: 'villa' }, 'Вилла'),
+                            React.createElement('option', { key: 'house', value: 'house' }, 'Дом'),
+                            React.createElement('option', { key: 'studio', value: 'studio' }, 'Студия'),
+                            React.createElement('option', { key: 'land', value: 'land' }, 'Участок')
+                        ])
+                    ]),
+
+                    // Region
+                    React.createElement('div', {
+                        key: 'region'
+                    }, [
+                        React.createElement('label', {
+                            key: 'label',
+                            className: 'block text-sm font-medium mb-2'
+                        }, 'Регион'),
+                        React.createElement('select', {
+                            key: 'select',
+                            value: filters.region || '',
+                            onChange: (e) => handleFilterChange('region', e.target.value),
+                            className: 'w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:ring-2 focus:ring-blue-400'
+                        }, [
+                            React.createElement('option', { key: 'all', value: '' }, 'Все регионы'),
+                            React.createElement('option', { key: 'limassol', value: 'Limassol' }, 'Лимассол'),
+                            React.createElement('option', { key: 'paphos', value: 'Paphos' }, 'Пафос'),
+                            React.createElement('option', { key: 'nicosia', value: 'Nicosia' }, 'Никосия'),
+                            React.createElement('option', { key: 'larnaca', value: 'Larnaca' }, 'Ларнака'),
+                            React.createElement('option', { key: 'famagusta', value: 'Famagusta' }, 'Фамагуста')
+                        ])
+                    ]),
+
+                    // Price range
+                    React.createElement('div', {
+                        key: 'price'
+                    }, [
+                        React.createElement('label', {
+                            key: 'label',
+                            className: 'block text-sm font-medium mb-2'
+                        }, 'Цена до'),
+                        React.createElement('select', {
+                            key: 'select',
+                            value: filters.maxPrice || '',
+                            onChange: (e) => handleFilterChange('maxPrice', e.target.value),
+                            className: 'w-full px-3 py-2 border border-gray-300 rounded-md text-gray-900 focus:ring-2 focus:ring-blue-400'
+                        }, [
+                            React.createElement('option', { key: 'all', value: '' }, 'Любая цена'),
+                            React.createElement('option', { key: '200k', value: '200000' }, '€200,000'),
+                            React.createElement('option', { key: '300k', value: '300000' }, '€300,000'),
+                            React.createElement('option', { key: '500k', value: '500000' }, '€500,000'),
+                            React.createElement('option', { key: '750k', value: '750000' }, '€750,000'),
+                            React.createElement('option', { key: '1m', value: '1000000' }, '€1,000,000')
+                        ])
+                    ])
+                ]),
+
+                // Action buttons
+                React.createElement('div', {
+                    key: 'actions',
+                    className: 'flex gap-3 mt-4'
+                }, [
+                    React.createElement('button', {
+                        key: 'reset',
+                        onClick: onReset,
+                        className: 'px-4 py-2 bg-white bg-opacity-20 text-white border border-white border-opacity-30 rounded-md hover:bg-opacity-30 transition-colors'
+                    }, '🔄 Сбросить'),
+                    React.createElement('div', {
+                        key: 'counter',
+                        className: 'flex items-center px-3 py-2 bg-white bg-opacity-20 rounded-md text-sm'
+                    }, `Найдено: ${stats?.filtered || 0} объектов`)
+                ])
+            ]);
+        };
+
+        // Property Card Component with Selection
+        const PropertyCard = ({ property, isSelected, onSelect, isInSelection, onToggleSelection }) => {
+            const formatPrice = (price) => {
+                if (!price) return 'Цена по запросу';
+                return new Intl.NumberFormat('ru-RU', { 
+                    style: 'currency', 
+                    currency: 'EUR',
+                    maximumFractionDigits: 0 
+                }).format(price);
+            };
+
+            const getTypeText = (type) => {
+                const typeMap = {
+                    apartment: 'Квартира',
+                    villa: 'Вилла',
+                    house: 'Дом',
+                    studio: 'Студия',
+                    land: 'Участок'
+                };
+                return typeMap[type] || type;
+            };
+
+            const getStatusBadge = (status) => {
+                const statusMap = {
+                    available: { color: 'bg-green-100 text-green-800', text: 'Доступно' },
+                    reserved: { color: 'bg-yellow-100 text-yellow-800', text: 'Зарезервировано' },
+                    sold: { color: 'bg-red-100 text-red-800', text: 'Продано' }
+                };
+                const statusInfo = statusMap[status] || statusMap.available;
+                return React.createElement('span', {
+                    className: `px-2 py-1 rounded-full text-xs font-medium ${statusInfo.color}`
+                }, statusInfo.text);
+            };
+
+            return React.createElement('div', {
+                className: `bg-white rounded-lg shadow-md overflow-hidden transition-all duration-200 cursor-pointer relative
+                    ${isSelected ? 'ring-2 ring-blue-400 shadow-lg' : 'hover:shadow-lg'}
+                    ${isInSelection ? 'border-l-4 border-blue-500' : ''}`,
+                onClick: () => onSelect(property)
+            }, [
+                // Image with selection checkbox
+                React.createElement('div', {
+                    key: 'image',
+                    className: 'relative h-48 bg-gray-200'
+                }, [
+                    React.createElement('img', {
+                        key: 'img',
+                        src: property.images?.[0] || 'https://via.placeholder.com/400x300?text=Фото+недоступно',
+                        alt: property.title,
+                        className: 'w-full h-full object-cover',
+                        onError: (e) => {
+                            e.target.src = 'https://via.placeholder.com/400x300?text=Фото+недоступно';
+                        }
+                    }),
+
+                    // Status badge
+                    React.createElement('div', {
+                        key: 'status',
+                        className: 'absolute top-2 left-2'
+                    }, getStatusBadge(property.status)),
+
+                    // Selection checkbox
+                    React.createElement('button', {
+                        key: 'selection',
+                        className: `selection-badge w-8 h-8 rounded-full border-2 flex items-center justify-center transition-colors ${
+                            isInSelection ? 'bg-blue-500 border-blue-500' : 'bg-white border-gray-300 hover:border-blue-400'
+                        }`,
+                        onClick: (e) => {
+                            e.stopPropagation();
+                            onToggleSelection(property.id);
+                        }
+                    }, isInSelection && React.createElement('svg', {
+                        className: 'w-5 h-5 text-white',
+                        fill: 'currentColor',
+                        viewBox: '0 0 20 20'
+                    }, React.createElement('path', {
+                        fillRule: 'evenodd',
+                        d: 'M16.707 5.293a1 1 0 010 1.414l-8 8a1 1 0 01-1.414 0l-4-4a1 1 0 011.414-1.414L8 12.586l7.293-7.293a1 1 0 011.414 0z',
+                        clipRule: 'evenodd'
+                    })))
+                ]),
+
+                // Content
+                React.createElement('div', {
+                    key: 'content',
+                    className: 'p-4'
+                }, [
+                    React.createElement('h3', {
+                        key: 'title',
+                        className: 'text-lg font-semibold text-gray-900 mb-2 line-clamp-2'
+                    }, property.title),
+
+                    React.createElement('div', {
+                        key: 'price',
+                        className: 'text-2xl font-bold text-blue-600 mb-2'
+                    }, formatPrice(property.price)),
+
+                    React.createElement('div', {
+                        key: 'details',
+                        className: 'text-sm text-gray-600 mb-3'
+                    }, [
+                        React.createElement('div', {
+                            key: 'type',
+                            className: 'mb-1'
+                        }, [
+                            getTypeText(property.type),
+                            property.bedrooms > 0 && ` • ${property.bedrooms} спален`,
+                            property.area > 0 && ` • ${property.area} м²`
+                        ]),
+                        React.createElement('div', {
+                            key: 'location',
+                            className: 'flex items-center text-gray-500'
+                        }, [
+                            React.createElement('svg', {
+                                key: 'icon',
+                                className: 'w-4 h-4 mr-1',
+                                fill: 'currentColor',
+                                viewBox: '0 0 20 20'
+                            }, React.createElement('path', {
+                                fillRule: 'evenodd',
+                                d: 'M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z',
+                                clipRule: 'evenodd'
+                            })),
+                            property.city || property.region || 'Cyprus'
+                        ])
+                    ]),
+
+                    property.description && React.createElement('p', {
+                        key: 'description',
+                        className: 'text-sm text-gray-600 line-clamp-2'
+                    }, property.description)
+                ])
+            ]);
+        };
+
+        // Selection Panel Component
+        const SelectionPanel = ({ selectedIds, properties, onClearSelection, onExportSelection }) => {
+            if (selectedIds.length === 0) return null;
+
+            const selectedProperties = properties.filter(p => selectedIds.includes(p.id));
+            const totalValue = selectedProperties.reduce((sum, p) => sum + (p.price || 0), 0);
+
+            return React.createElement('div', {
+                className: 'bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6'
+            }, [
+                React.createElement('h3', {
+                    key: 'title',
+                    className: 'font-semibold text-blue-800 mb-3 flex items-center'
+                }, [
+                    React.createElement('svg', {
+                        key: 'icon',
+                        className: 'w-5 h-5 mr-2',
+                        fill: 'currentColor',
+                        viewBox: '0 0 20 20'
+                    }, React.createElement('path', {
+                        d: 'M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'
+                    })),
+                    `Выбрано объектов: ${selectedIds.length}`
+                ]),
+
+                React.createElement('div', {
+                    key: 'stats',
+                    className: 'grid grid-cols-2 md:grid-cols-4 gap-4 mb-4'
+                }, [
+                    React.createElement('div', {
+                        key: 'count',
+                        className: 'text-center'
+                    }, [
+                        React.createElement('div', {
+                            key: 'number',
+                            className: 'text-xl font-bold text-blue-600'
+                        }, selectedIds.length),
+                        React.createElement('div', {
+                            key: 'label',
+                            className: 'text-sm text-gray-600'
+                        }, 'Объектов')
+                    ]),
+                    React.createElement('div', {
+                        key: 'value',
+                        className: 'text-center'
+                    }, [
+                        React.createElement('div', {
+                            key: 'number',
+                            className: 'text-xl font-bold text-green-600'
+                        }, `€${totalValue.toLocaleString()}`),
+                        React.createElement('div', {
+                            key: 'label',
+                            className: 'text-sm text-gray-600'
+                        }, 'Общая стоимость')
+                    ]),
+                    React.createElement('div', {
+                        key: 'avg',
+                        className: 'text-center'
+                    }, [
+                        React.createElement('div', {
+                            key: 'number',
+                            className: 'text-xl font-bold text-purple-600'
+                        }, `€${Math.round(totalValue / selectedIds.length).toLocaleString()}`),
+                        React.createElement('div', {
+                            key: 'label',
+                            className: 'text-sm text-gray-600'
+                        }, 'Средняя цена')
+                    ]),
+                    React.createElement('div', {
+                        key: 'types',
+                        className: 'text-center'
+                    }, [
+                        React.createElement('div', {
+                            key: 'number',
+                            className: 'text-xl font-bold text-orange-600'
+                        }, new Set(selectedProperties.map(p => p.type)).size),
+                        React.createElement('div', {
+                            key: 'label',
+                            className: 'text-sm text-gray-600'
+                        }, 'Типов')
+                    ])
+                ]),
+
+                React.createElement('div', {
+                    key: 'actions',
+                    className: 'flex gap-3'
+                }, [
+                    React.createElement('button', {
+                        key: 'export',
+                        onClick: onExportSelection,
+                        className: 'px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 transition-colors'
+                    }, '📋 Экспорт подборки'),
+                    React.createElement('button', {
+                        key: 'clear',
+                        onClick: onClearSelection,
+                        className: 'px-4 py-2 bg-gray-300 text-gray-700 rounded-md hover:bg-gray-400 transition-colors'
+                    }, '🗑️ Очистить')
+                ])
+            ]);
+        };
+
+        // Main App Component
         const AgentPortal = () => {
             const [properties, setProperties] = useState([]);
+            const [filteredProperties, setFilteredProperties] = useState([]);
             const [stats, setStats] = useState(null);
+            const [selectedProperty, setSelectedProperty] = useState(null);
+            const [selectedIds, setSelectedIds] = useState([]);
             const [isLoading, setIsLoading] = useState(true);
             const [isConnected, setIsConnected] = useState(false);
             const [error, setError] = useState(null);
+            const [filters, setFilters] = useState({
+                search: '',
+                type: '',
+                region: '',
+                maxPrice: ''
+            });
 
             useEffect(() => {
                 initializeApp();
             }, []);
+
+            useEffect(() => {
+                applyFilters();
+            }, [properties, filters]);
 
             const initializeApp = async () => {
                 try {
@@ -81,7 +562,7 @@
 
             const loadProperties = async () => {
                 try {
-                    const response = await fetch(`${API_CONFIG.baseUrl}/properties?limit=20`);
+                    const response = await fetch(`${API_CONFIG.baseUrl}/properties?limit=50`);
                     const data = await response.json();
                     setProperties(data.data || []);
                     console.log(`📊 Loaded ${data.data?.length || 0} properties`);
@@ -104,7 +585,7 @@
 
             const loadDemoData = () => {
                 console.log('📋 Loading demo data...');
-                setProperties([
+                const demoProperties = [
                     {
                         id: 'demo_1',
                         title: 'Современная квартира в Лимассоле',
@@ -117,6 +598,7 @@
                         city: 'Лимассол',
                         region: 'Limassol',
                         status: 'available',
+                        coordinates: { lat: 34.6851, lng: 33.0439 },
                         images: ['https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=400']
                     },
                     {
@@ -131,6 +613,7 @@
                         city: 'Пафос',
                         region: 'Paphos',
                         status: 'available',
+                        coordinates: { lat: 34.7571, lng: 32.4137 },
                         images: ['https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=400']
                     },
                     {
@@ -145,33 +628,103 @@
                         city: 'Никосия',
                         region: 'Nicosia',
                         status: 'available',
+                        coordinates: { lat: 35.1856, lng: 33.3823 },
                         images: ['https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=400']
+                    },
+                    {
+                        id: 'demo_4',
+                        title: 'Пентхаус в Ларнаке',
+                        description: 'Роскошный пентхаус с панорамным видом на море',
+                        price: 480000,
+                        type: 'apartment',
+                        bedrooms: 3,
+                        bathrooms: 2,
+                        area: 140,
+                        city: 'Ларнака',
+                        region: 'Larnaca',
+                        status: 'available',
+                        coordinates: { lat: 34.9110, lng: 33.6449 },
+                        images: ['https://images.unsplash.com/photo-1512917774080-9991f1c4c750?w=400']
                     }
-                ]);
+                ];
+                
+                setProperties(demoProperties);
                 setStats({
-                    total: 3,
-                    by_status: [{ status: 'available', count: 3 }],
-                    price: { avg: 406667 }
+                    total: demoProperties.length,
+                    by_status: [{ status: 'available', count: demoProperties.length }],
+                    price: { avg: demoProperties.reduce((sum, p) => sum + p.price, 0) / demoProperties.length }
                 });
             };
 
-            const formatPrice = (price) => {
-                if (!price) return 'Цена по запросу';
-                return new Intl.NumberFormat('ru-RU', { 
-                    style: 'currency', 
-                    currency: 'EUR',
-                    maximumFractionDigits: 0 
-                }).format(price);
+            const applyFilters = () => {
+                let filtered = [...properties];
+
+                if (filters.search) {
+                    const searchTerm = filters.search.toLowerCase();
+                    filtered = filtered.filter(p => 
+                        p.title?.toLowerCase().includes(searchTerm) ||
+                        p.description?.toLowerCase().includes(searchTerm) ||
+                        p.city?.toLowerCase().includes(searchTerm)
+                    );
+                }
+
+                if (filters.type) {
+                    filtered = filtered.filter(p => p.type === filters.type);
+                }
+
+                if (filters.region) {
+                    filtered = filtered.filter(p => p.region === filters.region);
+                }
+
+                if (filters.maxPrice) {
+                    filtered = filtered.filter(p => p.price <= parseInt(filters.maxPrice));
+                }
+
+                setFilteredProperties(filtered);
+                setStats(prev => ({ ...prev, filtered: filtered.length }));
             };
 
-            const getTypeText = (type) => {
-                const typeMap = {
-                    apartment: 'Квартира',
-                    villa: 'Вилла',
-                    house: 'Дом',
-                    studio: 'Студия'
+            const resetFilters = () => {
+                setFilters({
+                    search: '',
+                    type: '',
+                    region: '',
+                    maxPrice: ''
+                });
+            };
+
+            const handlePropertySelect = (property) => {
+                setSelectedProperty(property);
+            };
+
+            const handleToggleSelection = (propertyId) => {
+                setSelectedIds(prev => 
+                    prev.includes(propertyId) 
+                        ? prev.filter(id => id !== propertyId)
+                        : [...prev, propertyId]
+                );
+            };
+
+            const exportSelection = () => {
+                const selectedProperties = properties.filter(p => selectedIds.includes(p.id));
+                const exportData = {
+                    created: new Date().toISOString(),
+                    total: selectedIds.length,
+                    properties: selectedProperties
                 };
-                return typeMap[type] || type;
+
+                const blob = new Blob([JSON.stringify(exportData, null, 2)], {
+                    type: 'application/json'
+                });
+                
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `property-selection-${new Date().toISOString().split('T')[0]}.json`;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
             };
 
             const triggerImport = async () => {
@@ -208,7 +761,7 @@
                     React.createElement('p', {
                         key: 'loading',
                         className: 'text-gray-600 mb-4'
-                    }, 'Подключение к API...'),
+                    }, 'Загрузка расширенной версии...'),
                     React.createElement('div', {
                         key: 'spinner',
                         className: 'animate-pulse w-8 h-8 bg-blue-500 rounded-full mx-auto'
@@ -238,7 +791,7 @@
                         React.createElement('p', {
                             key: 'subtitle',
                             className: 'text-gray-600'
-                        }, 'Портал недвижимости Кипра с API интеграцией')
+                        }, 'Портал недвижимости с картой и фильтрами')
                     ]),
                     React.createElement('div', {
                         key: 'controls',
@@ -280,126 +833,165 @@
                         `${error}. Показываются демо данные.`
                     ]),
 
-                    // Stats
-                    stats && React.createElement('div', {
-                        key: 'stats',
-                        className: 'grid grid-cols-2 md:grid-cols-3 gap-4 mb-6'
+                    // Filter Panel
+                    React.createElement(FilterPanel, {
+                        key: 'filters',
+                        filters,
+                        onFiltersChange: setFilters,
+                        onReset: resetFilters,
+                        stats
+                    }),
+
+                    // Selection Panel
+                    React.createElement(SelectionPanel, {
+                        key: 'selection',
+                        selectedIds,
+                        properties,
+                        onClearSelection: () => setSelectedIds([]),
+                        onExportSelection: exportSelection
+                    }),
+
+                    // Map and Properties Layout
+                    React.createElement('div', {
+                        key: 'layout',
+                        className: 'grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6'
                     }, [
+                        // Map
                         React.createElement('div', {
-                            key: 'total',
-                            className: 'bg-white rounded-lg shadow p-6 text-center'
+                            key: 'map-container',
+                            className: 'bg-white rounded-lg shadow-md p-4'
                         }, [
-                            React.createElement('div', {
-                                key: 'number',
-                                className: 'text-3xl font-bold text-blue-600'
-                            }, stats.total || 0),
-                            React.createElement('div', {
-                                key: 'label',
-                                className: 'text-gray-600 mt-1'
-                            }, 'Всего объектов')
+                            React.createElement('h3', {
+                                key: 'title',
+                                className: 'text-lg font-semibold mb-4 flex items-center'
+                            }, [
+                                React.createElement('svg', {
+                                    key: 'icon',
+                                    className: 'w-5 h-5 mr-2',
+                                    fill: 'currentColor',
+                                    viewBox: '0 0 20 20'
+                                }, React.createElement('path', {
+                                    fillRule: 'evenodd',
+                                    d: 'M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z',
+                                    clipRule: 'evenodd'
+                                })),
+                                `Карта Кипра (${filteredProperties.length} объектов)`
+                            ]),
+                            React.createElement(MapComponent, {
+                                key: 'map',
+                                properties: filteredProperties,
+                                selectedProperty,
+                                onPropertySelect: handlePropertySelect
+                            })
                         ]),
-                        React.createElement('div', {
-                            key: 'available',
-                            className: 'bg-white rounded-lg shadow p-6 text-center'
+
+                        // Stats
+                        stats && React.createElement('div', {
+                            key: 'stats',
+                            className: 'bg-white rounded-lg shadow-md p-4'
                         }, [
+                            React.createElement('h3', {
+                                key: 'title',
+                                className: 'text-lg font-semibold mb-4'
+                            }, '📊 Статистика'),
                             React.createElement('div', {
-                                key: 'number',
-                                className: 'text-3xl font-bold text-green-600'
-                            }, stats.by_status?.find(s => s.status === 'available')?.count || 0),
-                            React.createElement('div', {
-                                key: 'label',
-                                className: 'text-gray-600 mt-1'
-                            }, 'Доступно')
-                        ]),
-                        React.createElement('div', {
-                            key: 'avg-price',
-                            className: 'bg-white rounded-lg shadow p-6 text-center'
-                        }, [
-                            React.createElement('div', {
-                                key: 'number',
-                                className: 'text-3xl font-bold text-purple-600'
-                            }, stats.price?.avg ? formatPrice(Math.round(stats.price.avg)) : '—'),
-                            React.createElement('div', {
-                                key: 'label',
-                                className: 'text-gray-600 mt-1'
-                            }, 'Средняя цена')
+                                key: 'stats-grid',
+                                className: 'grid grid-cols-2 gap-4'
+                            }, [
+                                React.createElement('div', {
+                                    key: 'total',
+                                    className: 'text-center p-4 bg-blue-50 rounded'
+                                }, [
+                                    React.createElement('div', {
+                                        key: 'number',
+                                        className: 'text-2xl font-bold text-blue-600'
+                                    }, stats.total || 0),
+                                    React.createElement('div', {
+                                        key: 'label',
+                                        className: 'text-gray-600 text-sm'
+                                    }, 'Всего')
+                                ]),
+                                React.createElement('div', {
+                                    key: 'filtered',
+                                    className: 'text-center p-4 bg-green-50 rounded'
+                                }, [
+                                    React.createElement('div', {
+                                        key: 'number',
+                                        className: 'text-2xl font-bold text-green-600'
+                                    }, stats.filtered || 0),
+                                    React.createElement('div', {
+                                        key: 'label',
+                                        className: 'text-gray-600 text-sm'
+                                    }, 'Найдено')
+                                ]),
+                                React.createElement('div', {
+                                    key: 'selected',
+                                    className: 'text-center p-4 bg-purple-50 rounded'
+                                }, [
+                                    React.createElement('div', {
+                                        key: 'number',
+                                        className: 'text-2xl font-bold text-purple-600'
+                                    }, selectedIds.length),
+                                    React.createElement('div', {
+                                        key: 'label',
+                                        className: 'text-gray-600 text-sm'
+                                    }, 'Выбрано')
+                                ]),
+                                React.createElement('div', {
+                                    key: 'avg-price',
+                                    className: 'text-center p-4 bg-orange-50 rounded'
+                                }, [
+                                    React.createElement('div', {
+                                        key: 'number',
+                                        className: 'text-lg font-bold text-orange-600'
+                                    }, stats.price?.avg ? `€${Math.round(stats.price.avg / 1000)}k` : '—'),
+                                    React.createElement('div', {
+                                        key: 'label',
+                                        className: 'text-gray-600 text-sm'
+                                    }, 'Средняя цена')
+                                ])
+                            ])
                         ])
                     ]),
 
                     // Properties grid
                     React.createElement('div', {
-                        key: 'grid',
-                        className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
-                    }, properties.map((property, index) => 
-                        React.createElement('div', {
-                            key: property.id || index,
-                            className: 'bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-200'
-                        }, [
-                            // Image
+                        key: 'properties',
+                        className: 'bg-white rounded-lg shadow-md p-6'
+                    }, [
+                        React.createElement('h3', {
+                            key: 'title',
+                            className: 'text-lg font-semibold mb-4'
+                        }, `🏠 Объекты недвижимости (${filteredProperties.length})`),
+                        
+                        filteredProperties.length > 0 ? 
                             React.createElement('div', {
-                                key: 'image',
-                                className: 'h-48 bg-gray-200'
-                            }, React.createElement('img', {
-                                src: property.images?.[0] || 'https://via.placeholder.com/400x300?text=Фото+недоступно',
-                                alt: property.title,
-                                className: 'w-full h-full object-cover',
-                                onError: (e) => {
-                                    e.target.src = 'https://via.placeholder.com/400x300?text=Фото+недоступно';
-                                }
-                            })),
-
-                            // Content
+                                key: 'grid',
+                                className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
+                            }, filteredProperties.map((property, index) => 
+                                React.createElement(PropertyCard, {
+                                    key: property.id || index,
+                                    property,
+                                    isSelected: selectedProperty?.id === property.id,
+                                    onSelect: handlePropertySelect,
+                                    isInSelection: selectedIds.includes(property.id),
+                                    onToggleSelection: handleToggleSelection
+                                })
+                            )) :
                             React.createElement('div', {
-                                key: 'content',
-                                className: 'p-4'
+                                key: 'empty',
+                                className: 'text-center py-12'
                             }, [
-                                React.createElement('h3', {
-                                    key: 'title',
-                                    className: 'text-lg font-semibold text-gray-900 mb-2 line-clamp-2'
-                                }, property.title),
-
                                 React.createElement('div', {
-                                    key: 'price',
-                                    className: 'text-2xl font-bold text-blue-600 mb-2'
-                                }, formatPrice(property.price)),
-
-                                React.createElement('div', {
-                                    key: 'details',
-                                    className: 'text-sm text-gray-600 mb-3'
-                                }, [
-                                    React.createElement('div', {
-                                        key: 'type',
-                                        className: 'mb-1'
-                                    }, [
-                                        getTypeText(property.type),
-                                        property.bedrooms > 0 && ` • ${property.bedrooms} спален`,
-                                        property.area > 0 && ` • ${property.area} м²`
-                                    ]),
-                                    React.createElement('div', {
-                                        key: 'location',
-                                        className: 'flex items-center text-gray-500'
-                                    }, [
-                                        React.createElement('svg', {
-                                            key: 'icon',
-                                            className: 'w-4 h-4 mr-1',
-                                            fill: 'currentColor',
-                                            viewBox: '0 0 20 20'
-                                        }, React.createElement('path', {
-                                            fillRule: 'evenodd',
-                                            d: 'M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z',
-                                            clipRule: 'evenodd'
-                                        })),
-                                        property.city || property.region || 'Cyprus'
-                                    ])
-                                ]),
-
-                                property.description && React.createElement('p', {
-                                    key: 'description',
-                                    className: 'text-sm text-gray-600 line-clamp-2'
-                                }, property.description)
+                                    key: 'message',
+                                    className: 'text-gray-500 text-lg mb-2'
+                                }, '🔍 Объекты не найдены'),
+                                React.createElement('p', {
+                                    key: 'hint',
+                                    className: 'text-gray-400'
+                                }, 'Попробуйте изменить фильтры поиска')
                             ])
-                        ])
-                    ))
+                    ])
                 ])
             ]);
         };
