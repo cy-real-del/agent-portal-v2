@@ -16,6 +16,8 @@ services:
         value: true
       - key: XML_IMPORT_INTERVAL
         value: 0 */6 * * *
+      - key: DATA_DIR
+        value: /opt/render/project/src/data
     disk:
       name: data
       mountPath: /opt/render/project/src/data
