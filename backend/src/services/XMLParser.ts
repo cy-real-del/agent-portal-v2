@@ -29,14 +29,14 @@ export class XMLParser {
       console.log('Root keys:', Object.keys(parsed));
       
       // Анализируем структуру
-      if (parsed.export) {
+      if (parsed.Export || parsed.export) {
         console.log('📋 Analyzing XML structure...');
-        console.log('Found export element, keys:', Object.keys(parsed.export));
+        console.log('Found export element, keys:', Object.keys(parsed.Export || parsed.export));
         
-        if (parsed.export.realtyobject) {
-          const objects = Array.isArray(parsed.export.realtyobject) 
-            ? parsed.export.realtyobject 
-            : [parsed.export.realtyobject];
+        if (parsed.Export || parsed.Export.RealtyObject || parsed.Export.realtyobject || parsed.export?.realtyobject) {
+          const objects = Array.isArray(parsed.Export || parsed.Export.RealtyObject || parsed.Export.realtyobject || parsed.export?.realtyobject) 
+            ? parsed.Export || parsed.Export.RealtyObject || parsed.Export.realtyobject || parsed.export?.realtyobject 
+            : [parsed.Export || parsed.Export.RealtyObject || parsed.Export.realtyobject || parsed.export?.realtyobject];
           
           console.log(`📊 Found ${objects.length} listings to process`);
           
