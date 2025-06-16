@@ -3,119 +3,81 @@ import { PropertyModel } from '../models/PropertyJSON';
 import path from 'path';
 import fs from 'fs';
 
-interface ImportStats {
-  total: number;
-  imported: number;
-  updated: number;
-  errors: number;
-  startTime: Date;
-  endTime?: Date;
-  duration?: number;
-}
-
 export class XMLImportJob {
-  private propertyModel: PropertyModel;
   private xmlParser: XMLParser;
+  private propertyModel: PropertyModel;
 
   constructor() {
-    const dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
-    if (!fs.existsSync(dataDir)) {
-      fs.mkdirSync(dataDir, { recursive: true });
-    }
-
+    this.xmlParser = new XMLParser();
+    const dataDir = process.env.DATA_DIR || (process.env.NODE_ENV === 'production' ? '/tmp' : path.join(process.cwd(), 'data'));
     this.propertyModel = new PropertyModel(dataDir);
-    this.xmlParser = new XMLParser({
-      xmlUrl: process.env.XML_URL || 'https://antariahomes.com/export.xml'
-    });
   }
 
-  async run(): Promise<ImportStats> {
-    const stats: ImportStats = {
-      total: 0,
-      imported: 0,
-      updated: 0,
-      errors: 0,
-      startTime: new Date()
-    };
-
-    console.log('🚀 Starting XML import job...');
-    this.propertyModel.logImport({ source: 'antaria_xml', status: 'started' });
-
+  async run(): Promise<any> {
+    const startTime = new Date();
+    
     try {
-      const existingProperties = new Set(
-        this.propertyModel.findAll().map(p => p.xml_id).filter(Boolean)
-      );
-
-      console.log('📥 Fetching and parsing XML...');
-      const properties = await this.xmlParser.fetchAndParseXML();
-      stats.total = properties.length;
-
-      console.log(`📊 Found ${properties.length} properties in XML`);
-
-      for (const property of properties) {
-        try {
-          const isExisting = existingProperties.has(property.xml_id || '');
-          
-          this.propertyModel.upsert(property);
-          
-          if (isExisting) {
-            stats.updated++;
-            console.log(`✏️  Updated: ${property.title} (${property.id})`);
-          } else {
-            stats.imported++;
-            console.log(`➕ Imported: ${property.title} (${property.id})`);
-          }
-
-        } catch (error) {
-          stats.errors++;
-          console.error(`❌ Error processing property ${property.id}:`, error);
-        }
+      console.log('🚀 Starting XML import job...');
+      
+      // Получаем и парсим XML
+      const properties = await this.xmlParser.fetchAndParse();
+      console.log(`✅ Parsed ${properties.length} properties from XML`);
+      
+      if (properties.length === 0) {
+        console.log('⚠️ No properties found in XML');
+        return {
+          total: 0,
+          imported: 0,
+          updated: 0,
+          errors: 0,
+          duration: Date.now() - startTime.getTime()
+        };
       }
-
-      stats.endTime = new Date();
-      stats.duration = stats.endTime.getTime() - stats.startTime.getTime();
-
-      this.propertyModel.logImport({
-        source: 'antaria_xml',
-        status: 'completed',
-        imported_count: stats.imported,
-        updated_count: stats.updated,
-        errors_count: stats.errors,
-        duration_ms: stats.duration
-      });
-
+      
+      // Получаем текущие свойства для сравнения
+      const existingProperties = this.propertyModel.getAll();
+      console.log(`📊 Found ${existingProperties.total} existing properties`);
+      
+      // Импортируем или обновляем свойства
+      const result = this.propertyModel.upsertBatch(properties);
+      
+      const endTime = new Date();
+      const stats = {
+        total: properties.length,
+        imported: result.imported,
+        updated: result.updated,
+        errors: result.errors,
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        duration: endTime.getTime() - startTime.getTime()
+      };
+      
       console.log('✅ XML import completed successfully!');
-      console.log(`📈 Stats: ${stats.imported} new, ${stats.updated} updated, ${stats.errors} errors`);
-      console.log(`⏱️  Duration: ${(stats.duration / 1000).toFixed(2)}s`);
-
+      console.log(`📊 Stats: ${result.imported} new, ${result.updated} updated, ${result.errors} errors`);
+      console.log(`⏱️ Duration: ${(stats.duration / 1000).toFixed(2)}s`);
+      
+      return stats;
     } catch (error) {
-      stats.endTime = new Date();
-      stats.duration = stats.endTime.getTime() - stats.startTime.getTime();
-
-      this.propertyModel.logImport({
-        source: 'antaria_xml',
-        status: 'failed',
-        errors_count: 1,
-        error_message: error instanceof Error ? error.message : String(error),
-        duration_ms: stats.duration
-      });
-
       console.error('❌ XML import failed:', error);
-      throw error;
+      
+      const endTime = new Date();
+      return {
+        total: 0,
+        imported: 0,
+        updated: 0,
+        errors: 1,
+        error: error instanceof Error ? error.message : String(error),
+        startTime: startTime.toISOString(),
+        endTime: endTime.toISOString(),
+        duration: endTime.getTime() - startTime.getTime()
+      };
     }
-
-    return stats;
-  }
-
-  close() {
-    this.propertyModel.close();
   }
 }
 
-// Запуск как standalone script
+// Если запущен напрямую
 if (require.main === module) {
   const job = new XMLImportJob();
-  
   job.run()
     .then(stats => {
       console.log('Import completed:', stats);

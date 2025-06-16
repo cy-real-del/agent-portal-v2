@@ -27,8 +27,8 @@ propertiesRouter.get('/', (req, res) => {
       }
     });
 
-    const properties = propertyModel.findAll(filters);
-    const total = propertyModel.findAll({ ...filters, limit: undefined, offset: undefined }).length;
+    const properties = propertyModel.getAll(filters);
+    const total = propertyModel.getAll({ ...filters, limit: undefined, offset: undefined }).length;
 
     res.json({
       success: true,
@@ -57,7 +57,7 @@ propertiesRouter.get('/', (req, res) => {
 propertiesRouter.get('/:id', (req, res) => {
   try {
     const propertyModel: PropertyModel = req.app.locals.propertyModel;
-    const property = propertyModel.findById(req.params.id);
+    const property = propertyModel.getById(req.params.id);
 
     if (!property) {
       return res.status(404).json({
@@ -88,7 +88,7 @@ propertiesRouter.get('/search/:query', (req, res) => {
     const propertyModel: PropertyModel = req.app.locals.propertyModel;
     const query = req.params.query.toLowerCase();
     
-    const allProperties = propertyModel.findAll({ limit: 1000 });
+    const allProperties = propertyModel.getAll({ limit: 1000 });
     const filteredProperties = allProperties.filter(property => 
       property.title.toLowerCase().includes(query) ||
       (property.description && property.description.toLowerCase().includes(query)) ||

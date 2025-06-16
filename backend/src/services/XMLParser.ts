@@ -280,8 +280,8 @@ export class XMLParser {
         complex_name,
         source: 'xml',
         xml_id: id,
-        created_at: new Date(),
-        updated_at: new Date()
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString()
       };
 
       return property;
