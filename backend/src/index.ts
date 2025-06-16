@@ -35,7 +35,7 @@ app.use((req, res, next) => {
 });
 
 // Инициализация базы данных
-const dataDir = process.env.DATA_DIR || path.join(process.cwd(), 'data');
+const dataDir = process.env.DATA_DIR || (process.env.NODE_ENV === 'production' ? '/tmp' : path.join(process.cwd(), 'data'));
 const propertyModel = new PropertyModel(dataDir);
 app.locals.propertyModel = propertyModel;
 
