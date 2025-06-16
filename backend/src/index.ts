@@ -10,19 +10,6 @@ import { XMLImportJob } from './jobs/importXML';
 import { propertiesRouter } from './routes/properties';
 import { healthRouter } from './routes/health';
 
-// В самом начале файла, после импортов
-import { fileURLToPath } from 'url';
-import { dirname } from 'path';
-
-// Для ES modules
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = dirname(__filename);
-
-// Обновите путь к данным для работы с Render disk
-const dataDir = process.env.NODE_ENV === 'production' 
-  ? '/opt/render/project/src/data'
-  : path.join(process.cwd(), 'data');
-
 dotenv.config();
 
 const app = express();
