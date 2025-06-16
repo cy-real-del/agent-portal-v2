@@ -45,9 +45,12 @@ export class XMLParser {
           
           console.log(`📊 Found ${objects.length} listings to process`);
           
-          // Показываем примеры структуры первых 5 объектов
-          for (let i = 0; i < Math.min(5, objects.length); i++) {
+          // Показываем примеры структуры первых 3 объектов
+          for (let i = 0; i < Math.min(3, objects.length); i++) {
             console.log(`\n🏠 Sample listing ${i + 1} structure:`, Object.keys(objects[i]));
+            // Показываем структуру фотографий
+            const photos = this.extractImages(objects[i]);
+            console.log(`📸 Found ${photos.length} images:`, photos.slice(0, 2));
           }
           
           return this.transformProperties(objects);
@@ -83,6 +86,52 @@ export class XMLParser {
     });
   }
 
+  /**
+   * Извлекает изображения из XML объекта Antaria XML format
+   */
+  private extractImages(prop: any): string[] {
+    const images: string[] = [];
+    
+    try {
+      // В Antaria XML Images это массив с одним объектом
+      const imagesArray = prop.Images;
+      if (imagesArray && Array.isArray(imagesArray) && imagesArray.length > 0) {
+        const imagesObj = imagesArray[0]; // Берем первый (и единственный) элемент массива
+        
+        // 1. Главное изображение
+        if (imagesObj.MainImage && Array.isArray(imagesObj.MainImage)) {
+          const mainUrl = imagesObj.MainImage[0];
+          if (mainUrl && typeof mainUrl === 'string' && mainUrl.trim().length > 0) {
+            images.push(mainUrl.trim());
+          }
+        }
+        
+        // 2. Дополнительные изображения
+        if (imagesObj.AdditionalImages && Array.isArray(imagesObj.AdditionalImages)) {
+          const additionalImagesObj = imagesObj.AdditionalImages[0];
+          if (additionalImagesObj && additionalImagesObj.AdditionalImage) {
+            const additionalImages = additionalImagesObj.AdditionalImage;
+            
+            if (Array.isArray(additionalImages)) {
+              for (const imageUrl of additionalImages) {
+                if (imageUrl && typeof imageUrl === 'string' && imageUrl.trim().length > 0) {
+                  images.push(imageUrl.trim());
+                }
+              }
+            }
+          }
+        }
+      }
+
+      // Убираем дубликаты и возвращаем
+      return [...new Set(images)];
+
+    } catch (error) {
+      console.error('Error extracting images:', error);
+      return [];
+    }
+  }
+
   private transformProperties(xmlProperties: any[]): any[] {
     console.log(`🔄 Transforming ${xmlProperties.length} properties...`);
     
@@ -107,47 +156,80 @@ export class XMLParser {
           return '';
         };
 
+        const safeGetText = (obj: any, lang: string = 'Ru'): string => {
+          if (!obj) return '';
+          if (typeof obj === 'string') return obj;
+          
+          // Попробуем получить текст на нужном языке
+          const langText = obj[lang] || obj[lang.toLowerCase()] || obj[lang.toUpperCase()];
+          if (langText) {
+            return Array.isArray(langText) ? langText[0] : String(langText);
+          }
+          
+          // Если не нашли - берем первое доступное значение
+          const values = Object.values(obj);
+          if (values.length > 0) {
+            const firstValue = values[0];
+            return Array.isArray(firstValue) ? String(firstValue[0]) : String(firstValue);
+          }
+          
+          return '';
+        };
+
         const safeNumber = (value: any): number => {
+          if (!value) return 0;
           const num = parseFloat(String(value).replace(/[^\d.-]/g, ''));
           return isNaN(num) ? 0 : num;
         };
 
-        const safeString = (value: any): string => {
-          if (!value) return '';
-          return Array.isArray(value) ? value[0] : String(value);
-        };
-
         const safeBoolean = (value: any): boolean => {
-          const str = safeString(value).toLowerCase();
+          const str = String(value).toLowerCase();
           return str === 'true' || str === '1' || str === 'yes';
         };
 
-        // Извлекаем данные с учетом разного регистра тегов
-        const id = safeGet(prop, 'Id', 'id');
-        const objectId = safeGet(prop, 'ObjectId', 'objectid', 'objectId');
-        const title = safeGet(prop, 'Title.0.En', 'Title.0.en', 'title.0.en', 'title.0.En') || 
-                     safeGet(prop, 'Title.0.Ru', 'Title.0.ru', 'title.0.ru', 'title.0.Ru') || 
-                     `Property ${objectId || id || index + 1}`;
+        // Извлекаем основные данные из Antaria XML структуры
+        const id = safeGet(prop, 'Id');
+        const objectId = safeGet(prop, 'ObjectId');
+        const objectCode = safeGet(prop, 'ObjectCode');
         
-        const price = safeNumber(safeGet(prop, 'Price', 'price'));
-        const area = safeNumber(safeGet(prop, 'Area', 'area'));
-        const bedrooms = safeNumber(safeGet(prop, 'NumBedrooms', 'numbedrooms', 'numBedrooms'));
-        const bathrooms = safeNumber(safeGet(prop, 'NumBathrooms', 'numbathrooms', 'numBathrooms'));
+        // Заголовок из многоязычной структуры
+        const titleObj = safeGet(prop, 'Title');
+        const title = safeGetText(titleObj) || objectCode || `Property ${objectId || id}`;
         
-        const isReserved = safeBoolean(safeGet(prop, 'IsReserved', 'isreserved', 'isReserved'));
-        const isSold = safeBoolean(safeGet(prop, 'IsSold', 'issold', 'isSold'));
-        const isActive = safeBoolean(safeGet(prop, 'Active', 'active'));
+        // Ценовые данные
+        const price = safeNumber(safeGet(prop, 'Price'));
+        
+        // Характеристики недвижимости
+        const area = safeNumber(safeGet(prop, 'Area'));
+        const bedrooms = safeNumber(safeGet(prop, 'NumBedrooms'));
+        const bathrooms = safeNumber(safeGet(prop, 'NumBathrooms'));
+        
+        // Статус объекта
+        const isActive = safeBoolean(safeGet(prop, 'Active'));
+        const isReserved = safeBoolean(safeGet(prop, 'IsReserved'));
+        const isSold = safeBoolean(safeGet(prop, 'IsSold'));
         
         let status = 'available';
         if (isSold) status = 'sold';
         else if (isReserved) status = 'reserved';
         else if (!isActive) status = 'off_market';
+        
+        // Местоположение
+        const cityObj = safeGet(prop, 'City');
+        const city = safeGetText(cityObj);
+        const districtObj = safeGet(prop, 'District');
+        const district = safeGetText(districtObj);
+        const region = district || city || 'Cyprus';
+        
+        // Извлекаем изображения
+        const images = this.extractImages(prop);
 
         const transformed = {
-          id: safeString(id),
-          xml_id: safeString(objectId),
+          id: String(id || objectId || index + 1),
+          xml_id: String(objectId),
+          object_code: objectCode || '',
           title: title,
-          type: 'apartment', // По умолчанию
+          type: 'apartment',
           status: status,
           price: price,
           currency: 'EUR',
@@ -156,21 +238,28 @@ export class XMLParser {
           rooms: bedrooms,
           bedrooms: bedrooms,
           bathrooms: bathrooms,
-          region: safeString(area), // Временно используем area как region
+          city: city || '',
+          district: district || '',
+          region: region,
           source: 'antaria_xml',
           features: [],
-          images: [],
+          images: images,
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
 
-        if (index < 5) {
+        if (index < 3) {
           console.log(`✅ Transformed property ${index + 1}:`, {
             id: transformed.id,
+            xml_id: transformed.xml_id,
             title: transformed.title,
+            type: transformed.type,
             price: transformed.price,
             area: transformed.area,
-            status: transformed.status
+            status: transformed.status,
+            city: transformed.city,
+            images_count: transformed.images.length,
+            first_image: transformed.images[0] || 'none'
           });
         }
 
@@ -182,6 +271,8 @@ export class XMLParser {
     }).filter(prop => prop !== null);
 
     console.log(`✅ Successfully transformed ${transformed.length} properties`);
+    console.log(`📸 Total images found: ${transformed.reduce((sum, prop) => sum + prop.images.length, 0)}`);
+    
     return transformed;
   }
 }
