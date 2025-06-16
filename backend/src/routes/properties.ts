@@ -3,46 +3,45 @@ import { PropertyModel } from '../models/PropertyJSON';
 
 export const propertiesRouter = Router();
 
-// GET /api/properties - получить все объекты с фильтрами
-propertiesRouter.get('/', (req, res) => {
+// GET /api/properties
+propertiesRouter.get('/', async (req, res) => {
   try {
-    const propertyModel: PropertyModel = req.app.locals.propertyModel;
+    const propertyModel = req.app.locals.propertyModel as PropertyModel;
     
     const filters = {
       type: req.query.type as string,
       status: req.query.status as string,
+      min_price: req.query.min_price as string,
+      max_price: req.query.max_price as string,
       region: req.query.region as string,
-      minPrice: req.query.minPrice ? parseFloat(req.query.minPrice as string) : undefined,
-      maxPrice: req.query.maxPrice ? parseFloat(req.query.maxPrice as string) : undefined,
-      minRooms: req.query.minRooms ? parseInt(req.query.minRooms as string) : undefined,
-      maxRooms: req.query.maxRooms ? parseInt(req.query.maxRooms as string) : undefined,
-      limit: req.query.limit ? parseInt(req.query.limit as string) : 100,
-      offset: req.query.offset ? parseInt(req.query.offset as string) : 0
+      sort: req.query.sort as string,
+      limit: req.query.limit as string || '100',
+      offset: req.query.offset as string || '0'
     };
 
-    // Убираем undefined значения
+    // Remove undefined values
     Object.keys(filters).forEach(key => {
       if (filters[key as keyof typeof filters] === undefined) {
         delete filters[key as keyof typeof filters];
       }
     });
 
-    const properties = propertyModel.getAll(filters);
-    const total = propertyModel.getAll({ ...filters, limit: undefined, offset: undefined }).length;
+    const result = propertyModel.getAll(filters);
+    const limit = Number(filters.limit);
+    const offset = Number(filters.offset);
 
     res.json({
       success: true,
-      data: properties,
+      data: result.data,
       pagination: {
-        total,
-        limit: filters.limit || 100,
-        offset: filters.offset || 0,
-        page: Math.floor((filters.offset || 0) / (filters.limit || 100)) + 1,
-        pages: Math.ceil(total / (filters.limit || 100))
+        total: result.total,
+        limit,
+        offset,
+        page: Math.floor(offset / limit) + 1,
+        pages: Math.ceil(result.total / limit)
       },
       filters
     });
-
   } catch (error) {
     console.error('Error fetching properties:', error);
     res.status(500).json({
@@ -53,17 +52,16 @@ propertiesRouter.get('/', (req, res) => {
   }
 });
 
-// GET /api/properties/:id - получить конкретный объект
-propertiesRouter.get('/:id', (req, res) => {
+// GET /api/properties/:id
+propertiesRouter.get('/:id', async (req, res) => {
   try {
-    const propertyModel: PropertyModel = req.app.locals.propertyModel;
+    const propertyModel = req.app.locals.propertyModel as PropertyModel;
     const property = propertyModel.getById(req.params.id);
-
+    
     if (!property) {
       return res.status(404).json({
         success: false,
-        message: 'Property not found',
-        id: req.params.id
+        message: 'Property not found'
       });
     }
 
@@ -71,7 +69,6 @@ propertiesRouter.get('/:id', (req, res) => {
       success: true,
       data: property
     });
-
   } catch (error) {
     console.error('Error fetching property:', error);
     res.status(500).json({
@@ -82,28 +79,38 @@ propertiesRouter.get('/:id', (req, res) => {
   }
 });
 
-// GET /api/properties/search/:query - поиск по тексту
-propertiesRouter.get('/search/:query', (req, res) => {
+// GET /api/properties/search
+propertiesRouter.get('/search', async (req, res) => {
   try {
-    const propertyModel: PropertyModel = req.app.locals.propertyModel;
-    const query = req.params.query.toLowerCase();
+    const propertyModel = req.app.locals.propertyModel as PropertyModel;
+    const { q } = req.query;
     
-    const allProperties = propertyModel.getAll({ limit: 1000 });
-    const filteredProperties = allProperties.data.filter(property => 
-      property.title.toLowerCase().includes(query) ||
-      (property.description && property.description.toLowerCase().includes(query)) ||
-      property.region.toLowerCase().includes(query) ||
-      property.area.toLowerCase().includes(query) ||
-      (property.developer && property.developer.toLowerCase().includes(query))
-    );
+    if (!q || typeof q !== 'string') {
+      return res.status(400).json({
+        success: false,
+        message: 'Search query is required'
+      });
+    }
+
+    const result = propertyModel.getAll();
+    const searchTerm = q.toLowerCase();
+    
+    const filtered = result.data.filter(property => {
+      const title = property.title?.toLowerCase() || '';
+      const region = property.region?.toLowerCase() || '';
+      const type = property.type?.toLowerCase() || '';
+      
+      return title.includes(searchTerm) || 
+             region.includes(searchTerm) || 
+             type.includes(searchTerm);
+    });
 
     res.json({
       success: true,
-      data: filteredProperties,
-      query,
-      count: filteredProperties.total
+      data: filtered,
+      total: filtered.length,
+      query: q
     });
-
   } catch (error) {
     console.error('Error searching properties:', error);
     res.status(500).json({
