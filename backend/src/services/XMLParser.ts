@@ -28,45 +28,36 @@ export class XMLParser {
       console.log('🔍 XML structure analysis:');
       console.log('Root keys:', Object.keys(parsed));
       
-      // Анализируем структуру
-      if (parsed.Export || parsed.export) {
-        console.log('📋 Analyzing XML structure...');
-        console.log('Found export element, keys:', Object.keys(parsed.Export || parsed.export));
+      // Проверяем оба варианта - с заглавными и строчными буквами
+      const exportData = parsed.Export || parsed.export;
+      
+      if (exportData) {
+        console.log('📋 Found Export element, keys:', Object.keys(exportData));
         
-        if (parsed.Export || parsed.Export.RealtyObject || parsed.Export.realtyobject || parsed.export?.realtyobject) {
-          const objects = Array.isArray(parsed.Export || parsed.Export.RealtyObject || parsed.Export.realtyobject || parsed.export?.realtyobject) 
-            ? parsed.Export || parsed.Export.RealtyObject || parsed.Export.realtyobject || parsed.export?.realtyobject 
-            : [parsed.Export || parsed.Export.RealtyObject || parsed.Export.realtyobject || parsed.export?.realtyobject];
+        // Проверяем оба варианта написания
+        const realtyObjects = exportData.RealtyObject || 
+                             exportData.realtyobject || 
+                             exportData.realtyObject ||
+                             exportData.Realtyobject;
+        
+        if (realtyObjects) {
+          const objects = Array.isArray(realtyObjects) ? realtyObjects : [realtyObjects];
           
           console.log(`📊 Found ${objects.length} listings to process`);
           
-          // Показываем примеры структуры
-          for (let i = 0; i < Math.min(100, objects.length); i++) {
+          // Показываем примеры структуры первых 5 объектов
+          for (let i = 0; i < Math.min(5, objects.length); i++) {
             console.log(`\n🏠 Sample listing ${i + 1} structure:`, Object.keys(objects[i]));
-            if (i < 5) {
-              console.log('Sample data:', {
-                id: objects[i].id?.[0],
-                active: objects[i].active?.[0],
-                publishedat: objects[i].publishedat?.[0],
-                objectid: objects[i].objectid?.[0],
-                objectcode: objects[i].objectcode?.[0],
-                isreserved: objects[i].isreserved?.[0],
-                issold: objects[i].issold?.[0],
-                ispartnerobject: objects[i].ispartnerobject?.[0],
-                title: objects[i].title?.[0],
-                alias: objects[i].alias?.[0],
-                city: objects[i].city?.[0]?.id?.[0],
-                '...': '...'
-              });
-            }
-            console.log(`🔑 Sample listing keys:`, Object.keys(objects[i]));
           }
           
           return this.transformProperties(objects);
+        } else {
+          console.log('⚠️ No RealtyObject found in Export. Available keys:', Object.keys(exportData));
         }
+      } else {
+        console.log('⚠️ No Export element found. Root keys:', Object.keys(parsed));
       }
       
-      console.log('⚠️ Unexpected XML structure');
       return [];
     } catch (error) {
       console.error('❌ Error fetching/parsing XML:', error);
@@ -76,11 +67,12 @@ export class XMLParser {
 
   private parseXML(xml: string): Promise<any> {
     return new Promise((resolve, reject) => {
+      // Не нормализуем теги, чтобы сохранить оригинальный регистр
       parseString(xml, {
         explicitArray: true,
         mergeAttrs: true,
         normalize: true,
-        normalizeTags: true
+        normalizeTags: false  // Важно! Сохраняем регистр тегов
       }, (err, result) => {
         if (err) {
           reject(err);
@@ -96,15 +88,23 @@ export class XMLParser {
     
     const transformed = xmlProperties.map((prop, index) => {
       try {
-        // Безопасное извлечение значений
-        const safeGet = (obj: any, path: string, defaultValue: any = '') => {
-          const keys = path.split('.');
-          let result = obj;
-          for (const key of keys) {
-            result = result?.[key];
-            if (result === undefined) return defaultValue;
+        // Безопасное извлечение значений с учетом разного регистра
+        const safeGet = (obj: any, ...paths: string[]): any => {
+          for (const path of paths) {
+            const keys = path.split('.');
+            let result = obj;
+            for (const key of keys) {
+              if (!result) break;
+              // Проверяем разные варианты регистра
+              result = result[key] || 
+                      result[key.toLowerCase()] || 
+                      result[key.charAt(0).toUpperCase() + key.slice(1).toLowerCase()];
+            }
+            if (result !== undefined && result !== null) {
+              return Array.isArray(result) ? result[0] : result;
+            }
           }
-          return Array.isArray(result) ? result[0] : result;
+          return '';
         };
 
         const safeNumber = (value: any): number => {
@@ -122,77 +122,21 @@ export class XMLParser {
           return str === 'true' || str === '1' || str === 'yes';
         };
 
-        // Извлекаем названия
-        const title = safeGet(prop, 'title.0.en.0') || 
-                      safeGet(prop, 'title.0.ru.0') || 
-                      safeGet(prop, 'title.0') || 
-                      `Property ${safeGet(prop, 'objectid.0', index + 1)}`;
-
-        // Координаты
-        const coords = safeGet(prop, 'coords.0', '').split(',');
-        const latitude = coords.length === 2 ? safeNumber(coords[0]) : undefined;
-        const longitude = coords.length === 2 ? safeNumber(coords[1]) : undefined;
-
-        // Изображения
-        let images: string[] = [];
-        const imageData = safeGet(prop, 'images.0');
-        if (imageData) {
-          if (typeof imageData === 'string') {
-            images = [imageData];
-          } else if (imageData.image) {
-            images = Array.isArray(imageData.image) 
-              ? imageData.image.map((img: any) => safeString(img))
-              : [safeString(imageData.image)];
-          }
-        }
-
-        // Особенности
-        let features: string[] = [];
-        const featureData = safeGet(prop, 'features.0');
-        if (featureData) {
-          if (Array.isArray(featureData.feature)) {
-            features = featureData.feature.map((f: any) => 
-              safeGet(f, 'en.0') || safeGet(f, 'ru.0') || safeString(f)
-            );
-          }
-        }
-
-        // Определяем тип недвижимости
-        const objectType = safeGet(prop, 'objecttype.0');
-        const categoryId = safeGet(prop, 'category.0.id.0');
-        let propertyType = 'property';
+        // Извлекаем данные с учетом разного регистра тегов
+        const id = safeGet(prop, 'Id', 'id');
+        const objectId = safeGet(prop, 'ObjectId', 'objectid', 'objectId');
+        const title = safeGet(prop, 'Title.0.En', 'Title.0.en', 'title.0.en', 'title.0.En') || 
+                     safeGet(prop, 'Title.0.Ru', 'Title.0.ru', 'title.0.ru', 'title.0.Ru') || 
+                     `Property ${objectId || id || index + 1}`;
         
-        if (objectType) {
-          const typeMap: { [key: string]: string } = {
-            'апартаменты': 'apartment',
-            'apartments': 'apartment',
-            'вилла': 'villa',
-            'villa': 'villa',
-            'дом': 'house',
-            'house': 'house',
-            'таунхаус': 'townhouse',
-            'townhouse': 'townhouse',
-            'пентхаус': 'penthouse',
-            'penthouse': 'penthouse',
-            'земля': 'land',
-            'land': 'land',
-            'коммерческая': 'commercial',
-            'commercial': 'commercial'
-          };
-          
-          const typeLower = objectType.toLowerCase();
-          for (const [key, value] of Object.entries(typeMap)) {
-            if (typeLower.includes(key)) {
-              propertyType = value;
-              break;
-            }
-          }
-        }
-
-        // Статус
-        const isReserved = safeBoolean(safeGet(prop, 'isreserved.0'));
-        const isSold = safeBoolean(safeGet(prop, 'issold.0'));
-        const isActive = safeBoolean(safeGet(prop, 'active.0'));
+        const price = safeNumber(safeGet(prop, 'Price', 'price'));
+        const area = safeNumber(safeGet(prop, 'Area', 'area'));
+        const bedrooms = safeNumber(safeGet(prop, 'NumBedrooms', 'numbedrooms', 'numBedrooms'));
+        const bathrooms = safeNumber(safeGet(prop, 'NumBathrooms', 'numbathrooms', 'numBathrooms'));
+        
+        const isReserved = safeBoolean(safeGet(prop, 'IsReserved', 'isreserved', 'isReserved'));
+        const isSold = safeBoolean(safeGet(prop, 'IsSold', 'issold', 'isSold'));
+        const isActive = safeBoolean(safeGet(prop, 'Active', 'active'));
         
         let status = 'available';
         if (isSold) status = 'sold';
@@ -200,31 +144,34 @@ export class XMLParser {
         else if (!isActive) status = 'off_market';
 
         const transformed = {
-          id: safeString(safeGet(prop, 'id.0')),
-          xml_id: safeString(safeGet(prop, 'objectid.0')),
+          id: safeString(id),
+          xml_id: safeString(objectId),
           title: title,
-          type: propertyType,
+          type: 'apartment', // По умолчанию
           status: status,
-          price: safeNumber(safeGet(prop, 'price.0')),
+          price: price,
           currency: 'EUR',
-          area_total: safeNumber(safeGet(prop, 'area.0')),
-          area: safeNumber(safeGet(prop, 'area.0')),
-          rooms: safeNumber(safeGet(prop, 'numbedrooms.0')),
-          bedrooms: safeNumber(safeGet(prop, 'numbedrooms.0')),
-          bathrooms: safeNumber(safeGet(prop, 'numbathrooms.0')),
-          region: safeString(safeGet(prop, 'area.0')),
-          location: safeString(safeGet(prop, 'locations.0')),
-          latitude: latitude,
-          longitude: longitude,
-          features: features,
-          images: images.filter(img => img && img.length > 0),
+          area_total: area,
+          area: area,
+          rooms: bedrooms,
+          bedrooms: bedrooms,
+          bathrooms: bathrooms,
+          region: safeString(area), // Временно используем area как region
           source: 'antaria_xml',
+          features: [],
+          images: [],
           created_at: new Date().toISOString(),
           updated_at: new Date().toISOString()
         };
 
         if (index < 5) {
-          console.log(`✅ Transformed property ${index + 1}:`, transformed);
+          console.log(`✅ Transformed property ${index + 1}:`, {
+            id: transformed.id,
+            title: transformed.title,
+            price: transformed.price,
+            area: transformed.area,
+            status: transformed.status
+          });
         }
 
         return transformed;
