@@ -1,28 +1,411 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="ru">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Agent Portal - CyprusProperties Pro</title>
-    
-    <!-- Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    
-    <!-- Leaflet CSS -->
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script type="module" crossorigin src="./assets/index-7c064b8a.js"></script>
-    <link rel="stylesheet" href="./assets/index-de233e14.css">
-  </head>
-  <body>
-    <div id="root"></div>
-    
-    <!-- Leaflet JavaScript -->
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-    
-    <!-- React App -->
-    
-  </body>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Agent Portal v2 - API Version</title>
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        .line-clamp-2 {
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+        .animate-pulse {
+            animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: .5; }
+        }
+    </style>
+</head>
+<body>
+    <div id="root">
+        <div class="min-h-screen bg-gray-50 flex items-center justify-center">
+            <div class="text-center">
+                <h1 class="text-3xl font-bold text-gray-900 mb-4">Agent Portal v2</h1>
+                <p class="text-gray-600 mb-4">Загрузка API интеграции...</p>
+                <div class="animate-pulse w-8 h-8 bg-blue-500 rounded-full mx-auto"></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="text/babel">
+        const { useState, useEffect } = React;
+
+        // API Configuration
+        const API_CONFIG = {
+            baseUrl: window.location.hostname === 'localhost' 
+                ? 'http://localhost:8000/api'
+                : 'https://cy-real-portal-api.onrender.com/api'
+        };
+
+        const AgentPortal = () => {
+            const [properties, setProperties] = useState([]);
+            const [stats, setStats] = useState(null);
+            const [isLoading, setIsLoading] = useState(true);
+            const [isConnected, setIsConnected] = useState(false);
+            const [error, setError] = useState(null);
+
+            useEffect(() => {
+                initializeApp();
+            }, []);
+
+            const initializeApp = async () => {
+                try {
+                    console.log('🚀 Connecting to API...');
+                    const response = await fetch(`${API_CONFIG.baseUrl}/health`);
+                    const data = await response.json();
+                    
+                    if (data.success) {
+                        console.log('✅ API Connected!');
+                        setIsConnected(true);
+                        await Promise.all([
+                            loadProperties(),
+                            loadStats()
+                        ]);
+                    }
+                } catch (error) {
+                    console.log('❌ API недоступен, используем демо данные');
+                    setError('API недоступен');
+                    loadDemoData();
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            const loadProperties = async () => {
+                try {
+                    const response = await fetch(`${API_CONFIG.baseUrl}/properties?limit=20`);
+                    const data = await response.json();
+                    setProperties(data.data || []);
+                    console.log(`📊 Loaded ${data.data?.length || 0} properties`);
+                } catch (error) {
+                    console.error('Failed to load properties:', error);
+                    loadDemoData();
+                }
+            };
+
+            const loadStats = async () => {
+                try {
+                    const response = await fetch(`${API_CONFIG.baseUrl}/stats`);
+                    const data = await response.json();
+                    setStats(data.stats);
+                    console.log('📈 Stats loaded:', data.stats);
+                } catch (error) {
+                    console.error('Failed to load stats:', error);
+                }
+            };
+
+            const loadDemoData = () => {
+                console.log('📋 Loading demo data...');
+                setProperties([
+                    {
+                        id: 'demo_1',
+                        title: 'Современная квартира в Лимассоле',
+                        description: 'Прекрасная квартира с видом на море в центре Лимассола',
+                        price: 350000,
+                        type: 'apartment',
+                        bedrooms: 2,
+                        bathrooms: 2,
+                        area: 85,
+                        city: 'Лимассол',
+                        region: 'Limassol',
+                        status: 'available',
+                        images: ['https://images.unsplash.com/photo-1545324418-cc1a3fa10c00?w=400']
+                    },
+                    {
+                        id: 'demo_2',
+                        title: 'Вилла с видом на море в Пафосе',
+                        description: 'Роскошная вилла с частным бассейном и потрясающим видом',
+                        price: 750000,
+                        type: 'villa',
+                        bedrooms: 4,
+                        bathrooms: 3,
+                        area: 220,
+                        city: 'Пафос',
+                        region: 'Paphos',
+                        status: 'available',
+                        images: ['https://images.unsplash.com/photo-1613490493576-7fde63acd811?w=400']
+                    },
+                    {
+                        id: 'demo_3',
+                        title: 'Студия в центре Никосии',
+                        description: 'Уютная студия в самом сердце столицы Кипра',
+                        price: 120000,
+                        type: 'studio',
+                        bedrooms: 0,
+                        bathrooms: 1,
+                        area: 35,
+                        city: 'Никосия',
+                        region: 'Nicosia',
+                        status: 'available',
+                        images: ['https://images.unsplash.com/photo-1522708323590-d24dbb6b0267?w=400']
+                    }
+                ]);
+                setStats({
+                    total: 3,
+                    by_status: [{ status: 'available', count: 3 }],
+                    price: { avg: 406667 }
+                });
+            };
+
+            const formatPrice = (price) => {
+                if (!price) return 'Цена по запросу';
+                return new Intl.NumberFormat('ru-RU', { 
+                    style: 'currency', 
+                    currency: 'EUR',
+                    maximumFractionDigits: 0 
+                }).format(price);
+            };
+
+            const getTypeText = (type) => {
+                const typeMap = {
+                    apartment: 'Квартира',
+                    villa: 'Вилла',
+                    house: 'Дом',
+                    studio: 'Студия'
+                };
+                return typeMap[type] || type;
+            };
+
+            const triggerImport = async () => {
+                if (!isConnected) return;
+                
+                try {
+                    setIsLoading(true);
+                    const response = await fetch(`${API_CONFIG.baseUrl}/import/xml`, {
+                        method: 'POST'
+                    });
+                    const result = await response.json();
+                    
+                    if (result.success) {
+                        console.log('✅ Import completed');
+                        await initializeApp();
+                    }
+                } catch (error) {
+                    console.error('Import failed:', error);
+                } finally {
+                    setIsLoading(false);
+                }
+            };
+
+            if (isLoading) {
+                return React.createElement('div', {
+                    className: 'min-h-screen bg-gray-50 flex items-center justify-center'
+                }, React.createElement('div', {
+                    className: 'text-center'
+                }, [
+                    React.createElement('h1', {
+                        key: 'title',
+                        className: 'text-3xl font-bold text-gray-900 mb-4'
+                    }, 'Agent Portal v2'),
+                    React.createElement('p', {
+                        key: 'loading',
+                        className: 'text-gray-600 mb-4'
+                    }, 'Подключение к API...'),
+                    React.createElement('div', {
+                        key: 'spinner',
+                        className: 'animate-pulse w-8 h-8 bg-blue-500 rounded-full mx-auto'
+                    })
+                ]));
+            }
+
+            return React.createElement('div', {
+                className: 'min-h-screen bg-gray-50'
+            }, [
+                // Header
+                React.createElement('header', {
+                    key: 'header',
+                    className: 'bg-white shadow-sm border-b'
+                }, React.createElement('div', {
+                    className: 'max-w-7xl mx-auto px-4 py-4'
+                }, React.createElement('div', {
+                    className: 'flex justify-between items-center'
+                }, [
+                    React.createElement('div', {
+                        key: 'title'
+                    }, [
+                        React.createElement('h1', {
+                            key: 'h1',
+                            className: 'text-2xl font-bold text-gray-900'
+                        }, 'Agent Portal v2'),
+                        React.createElement('p', {
+                            key: 'subtitle',
+                            className: 'text-gray-600'
+                        }, 'Портал недвижимости Кипра с API интеграцией')
+                    ]),
+                    React.createElement('div', {
+                        key: 'controls',
+                        className: 'flex items-center gap-4'
+                    }, [
+                        React.createElement('div', {
+                            key: 'status',
+                            className: `inline-flex items-center px-3 py-1 rounded-full text-sm ${
+                                isConnected ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
+                            }`
+                        }, [
+                            React.createElement('div', {
+                                key: 'indicator',
+                                className: `w-2 h-2 rounded-full mr-2 ${
+                                    isConnected ? 'bg-green-600' : 'bg-red-600'
+                                }`
+                            }),
+                            isConnected ? `API подключен • ${properties.length} объектов` : 'API недоступен'
+                        ]),
+                        isConnected && React.createElement('button', {
+                            key: 'import',
+                            onClick: triggerImport,
+                            className: 'px-4 py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition-colors'
+                        }, '🔄 Обновить данные')
+                    ])
+                ]))),
+
+                // Main Content
+                React.createElement('main', {
+                    key: 'main',
+                    className: 'max-w-7xl mx-auto px-4 py-6'
+                }, [
+                    // Error message
+                    error && React.createElement('div', {
+                        key: 'error',
+                        className: 'bg-yellow-100 border border-yellow-400 text-yellow-700 px-4 py-3 rounded mb-6'
+                    }, [
+                        React.createElement('strong', { key: 'label' }, '⚠️ '),
+                        `${error}. Показываются демо данные.`
+                    ]),
+
+                    // Stats
+                    stats && React.createElement('div', {
+                        key: 'stats',
+                        className: 'grid grid-cols-2 md:grid-cols-3 gap-4 mb-6'
+                    }, [
+                        React.createElement('div', {
+                            key: 'total',
+                            className: 'bg-white rounded-lg shadow p-6 text-center'
+                        }, [
+                            React.createElement('div', {
+                                key: 'number',
+                                className: 'text-3xl font-bold text-blue-600'
+                            }, stats.total || 0),
+                            React.createElement('div', {
+                                key: 'label',
+                                className: 'text-gray-600 mt-1'
+                            }, 'Всего объектов')
+                        ]),
+                        React.createElement('div', {
+                            key: 'available',
+                            className: 'bg-white rounded-lg shadow p-6 text-center'
+                        }, [
+                            React.createElement('div', {
+                                key: 'number',
+                                className: 'text-3xl font-bold text-green-600'
+                            }, stats.by_status?.find(s => s.status === 'available')?.count || 0),
+                            React.createElement('div', {
+                                key: 'label',
+                                className: 'text-gray-600 mt-1'
+                            }, 'Доступно')
+                        ]),
+                        React.createElement('div', {
+                            key: 'avg-price',
+                            className: 'bg-white rounded-lg shadow p-6 text-center'
+                        }, [
+                            React.createElement('div', {
+                                key: 'number',
+                                className: 'text-3xl font-bold text-purple-600'
+                            }, stats.price?.avg ? formatPrice(Math.round(stats.price.avg)) : '—'),
+                            React.createElement('div', {
+                                key: 'label',
+                                className: 'text-gray-600 mt-1'
+                            }, 'Средняя цена')
+                        ])
+                    ]),
+
+                    // Properties grid
+                    React.createElement('div', {
+                        key: 'grid',
+                        className: 'grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6'
+                    }, properties.map((property, index) => 
+                        React.createElement('div', {
+                            key: property.id || index,
+                            className: 'bg-white rounded-lg shadow-md overflow-hidden hover:shadow-lg transition-shadow duration-200'
+                        }, [
+                            // Image
+                            React.createElement('div', {
+                                key: 'image',
+                                className: 'h-48 bg-gray-200'
+                            }, React.createElement('img', {
+                                src: property.images?.[0] || 'https://via.placeholder.com/400x300?text=Фото+недоступно',
+                                alt: property.title,
+                                className: 'w-full h-full object-cover',
+                                onError: (e) => {
+                                    e.target.src = 'https://via.placeholder.com/400x300?text=Фото+недоступно';
+                                }
+                            })),
+
+                            // Content
+                            React.createElement('div', {
+                                key: 'content',
+                                className: 'p-4'
+                            }, [
+                                React.createElement('h3', {
+                                    key: 'title',
+                                    className: 'text-lg font-semibold text-gray-900 mb-2 line-clamp-2'
+                                }, property.title),
+
+                                React.createElement('div', {
+                                    key: 'price',
+                                    className: 'text-2xl font-bold text-blue-600 mb-2'
+                                }, formatPrice(property.price)),
+
+                                React.createElement('div', {
+                                    key: 'details',
+                                    className: 'text-sm text-gray-600 mb-3'
+                                }, [
+                                    React.createElement('div', {
+                                        key: 'type',
+                                        className: 'mb-1'
+                                    }, [
+                                        getTypeText(property.type),
+                                        property.bedrooms > 0 && ` • ${property.bedrooms} спален`,
+                                        property.area > 0 && ` • ${property.area} м²`
+                                    ]),
+                                    React.createElement('div', {
+                                        key: 'location',
+                                        className: 'flex items-center text-gray-500'
+                                    }, [
+                                        React.createElement('svg', {
+                                            key: 'icon',
+                                            className: 'w-4 h-4 mr-1',
+                                            fill: 'currentColor',
+                                            viewBox: '0 0 20 20'
+                                        }, React.createElement('path', {
+                                            fillRule: 'evenodd',
+                                            d: 'M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z',
+                                            clipRule: 'evenodd'
+                                        })),
+                                        property.city || property.region || 'Cyprus'
+                                    ])
+                                ]),
+
+                                property.description && React.createElement('p', {
+                                    key: 'description',
+                                    className: 'text-sm text-gray-600 line-clamp-2'
+                                }, property.description)
+                            ])
+                        ])
+                    ))
+                ])
+            ]);
+        };
+
+        // Render the app
+        ReactDOM.render(React.createElement(AgentPortal), document.getElementById('root'));
+    </script>
+</body>
 </html>
