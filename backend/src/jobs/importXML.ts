@@ -20,7 +20,7 @@ export class XMLImportJob {
       console.log('🚀 Starting XML import job...');
       
       // Получаем и парсим XML
-      const properties = await this.xmlParser.fetchAndParse();
+      const properties = await this.xmlParser.fetchAndParseXML();
       console.log(`✅ Parsed ${properties.length} properties from XML`);
       
       if (properties.length === 0) {

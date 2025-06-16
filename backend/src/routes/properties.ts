@@ -89,7 +89,7 @@ propertiesRouter.get('/search/:query', (req, res) => {
     const query = req.params.query.toLowerCase();
     
     const allProperties = propertyModel.getAll({ limit: 1000 });
-    const filteredProperties = allProperties.filter(property => 
+    const filteredProperties = allProperties.data.filter(property => 
       property.title.toLowerCase().includes(query) ||
       (property.description && property.description.toLowerCase().includes(query)) ||
       property.region.toLowerCase().includes(query) ||
@@ -101,7 +101,7 @@ propertiesRouter.get('/search/:query', (req, res) => {
       success: true,
       data: filteredProperties,
       query,
-      count: filteredProperties.length
+      count: filteredProperties.total
     });
 
   } catch (error) {
